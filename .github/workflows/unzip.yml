@@ -1,0 +1,20 @@
+name: Extract Zip
+on: workflow_dispatch
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unzip (overwrite existing files)
+        run: |
+          unzip -o -q "My-vpn-main-updated.zip" -d extracted/
+          rm "My-vpn-main-updated.zip"
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git status --porcelain
+          git diff --cached --quiet || git commit -m "Extract zip and overwrite existing files"
+          git push
