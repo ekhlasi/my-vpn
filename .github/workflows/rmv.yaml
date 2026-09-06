@@ -1,0 +1,51 @@
+name: Clean root and extract zip
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  clean-and-extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete everything except .github
+        run: |
+          echo "🧹 در حال حذف همه چیز به جز .github ..."
+          # پیدا کردن همه فایل‌ها و پوشه‌ها به جز .github و خود اسکریپت
+          find . -maxdepth 1 ! -name '.github' ! -name '.' ! -name '..' -exec rm -rf {} +
+          echo "✅ پاک‌سازی کامل شد."
+
+      - name: Extract zip files if any
+        run: |
+          # اگه فایل زیپی وجود داشته باشه، استخراجش کن
+          if ls *.zip 1> /dev/null 2>&1; then
+            for zipfile in *.zip; do
+              echo "📦 استخراج $zipfile ..."
+              7z x "$zipfile" -o. -y
+              rm -f "$zipfile"
+            done
+          else
+            echo "ℹ️ هیچ فایل زیپی پیدا نشد."
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Clean root and extract zip (overwrite all)"
+            branch="${GITHUB_REF_NAME:-main}"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$branch
+          else
+            echo "ℹ️ هیچ تغییری برای commit وجود ندارد."
+          fi
