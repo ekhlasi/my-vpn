@@ -1,0 +1,67 @@
+name: Unzip Root Archive
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List all files in root (for debug)
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Files and folders in root:"
+          ls -la
+
+      - name: Find and extract zip files
+        run: |
+          # استفاده از find برای پیدا کردن تمام فایل‌های zip در ریشه (عمق 1)
+          zip_files=$(find . -maxdepth 1 -type f -name "*.zip")
+          if [ -z "$zip_files" ]; then
+            echo "❌ No zip file found in root. Exiting."
+            exit 0
+          fi
+          echo "✅ Found zip files:"
+          echo "$zip_files"
+          for zipfile in $zip_files; do
+            echo "📦 Extracting $zipfile ..."
+            unzip -o "$zipfile" -d .
+            # بررسی کد خروجی
+            if [ $? -eq 0 ]; then
+              echo "✅ Successfully extracted $zipfile"
+            else
+              echo "❌ Failed to extract $zipfile"
+            fi
+          done
+
+      - name: Check for changes
+        run: |
+          git status
+          git diff --staged --name-only
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --staged --quiet; then
+            echo "✅ Changes detected, committing..."
+            git commit -m "Extract zip files into root (overwrite duplicates)"
+            # تعیین شاخه هدف به صورت پویا
+            branch_name="${GITHUB_REF_NAME:-main}"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$branch_name
+          else
+            echo "ℹ️ No changes to commit."
+          fi
