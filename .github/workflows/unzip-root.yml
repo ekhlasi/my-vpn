@@ -1,0 +1,45 @@
+name: Unzip Root Archive
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract all zip files in root (preserve structure, overwrite)
+        run: |
+          # بررسی وجود فایل zip
+          if ls *.zip 1> /dev/null 2>&1; then
+            for zipfile in *.zip; do
+              echo "Extracting $zipfile ..."
+              unzip -o "$zipfile" -d .
+              # در صورت تمایل فایل zip را پس از استخراج حذف کنید:
+              # rm "$zipfile"
+            done
+          else
+            echo "No zip file found, skipping extraction."
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Extract all zip files into root (overwrite duplicates)"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
+          else
+            echo "No changes to commit."
+          fi
