@@ -1,0 +1,94 @@
+name: Unzip and Overwrite Root
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip-overwrite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List files before extraction (debug)
+        run: ls -la
+
+      - name: Extract zip files and force overwrite
+        run: |
+          # غیرفعال کردن خروج‌های خطا برای مدیریت دستی
+          set +e
+
+          # پیدا کردن فایل‌های زیپ (حتی با اسم‌های دارای فاصله)
+          find . -maxdepth 1 -type f -iname "*.zip" -print0 | while IFS= read -r -d '' zipfile; do
+            echo "📦 پردازش: $zipfile"
+            
+            # پوشه موقت برای استخراج
+            temp_dir=$(mktemp -d)
+            echo "📂 استخراج به: $temp_dir"
+
+            # اول با 7z (سازگار با فرمت‌های جدید)
+            7z x "$zipfile" -o"$temp_dir" -y
+            exit_code=$?
+            if [ $exit_code -ne 0 ]; then
+              echo "⚠️ 7z با کد $exit_code شکست خورد. تلاش با unzip ..."
+              unzip -o "$zipfile" -d "$temp_dir"
+              exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                echo "❌ unzip هم با کد $exit_code شکست خورد. رد شدن از $zipfile"
+                rm -rf "$temp_dir"
+                continue
+              fi
+            fi
+
+            # نمایش محتوای استخراج‌شده
+            echo "📋 محتویات استخراج‌شده:"
+            ls -la "$temp_dir"
+
+            # اگر فقط یک پوشه در خروجی باشد، محتویات آن را به ریشه منتقل می‌کنیم
+            items=( "$temp_dir"/* )
+            if [ ${#items[@]} -eq 1 ] && [ -d "${items[0]}" ]; then
+              echo "📁 زیپ فقط یک پوشه سطح بالا دارد. محتویات آن به ریشه منتقل می‌شود."
+              rsync -av "${items[0]}"/ ./
+            else
+              echo "📁 تمام محتویات به ریشه کپی می‌شوند."
+              rsync -av "$temp_dir"/ ./
+            fi
+
+            # پاک‌سازی
+            rm -rf "$temp_dir"
+            # حذف فایل زیپ (اختیاری)
+            rm -f "$zipfile"
+            echo "✅ پردازش $zipfile تمام شد."
+          done
+
+          # دوباره فعال کردن خروج‌های خطا (برای بقیه مراحل)
+          set -e
+
+      - name: List files after extraction (debug)
+        run: ls -la
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --staged --quiet; then
+            echo "✅ تغییرات شناسایی شد. در حال commit..."
+            branch="${GITHUB_REF_NAME:-main}"
+            git commit -m "Overwrite root with zip contents"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$branch
+          else
+            echo "ℹ️ هیچ تغییر محتوایی شناسایی نشد. ایجاد commit اجباری برای ثبت عملیات..."
+            touch .force_update
+            git add .force_update
+            branch="${GITHUB_REF_NAME:-main}"
+            git commit -m "Force update: re-extract zip (overwrite identical files)"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$branch
+          fi
