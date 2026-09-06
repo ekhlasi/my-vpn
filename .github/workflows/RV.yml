@@ -1,0 +1,63 @@
+name: Clean root and extract zip
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  clean-and-extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ۱. فایل‌های زیپ رو به جای موقت منتقل می‌کنیم تا پاک نشوند
+      - name: Move zip files to temp
+        run: |
+          mkdir -p /tmp/zipfiles
+          mv *.zip /tmp/zipfiles/ 2>/dev/null || true
+
+      # ۲. همه چیز رو به جز .github و .git حذف می‌کنیم
+      - name: Delete everything except .github and .git
+        run: |
+          shopt -s dotglob   # شامل فایل‌های مخفی مثل .gitignore
+          for item in *; do
+            if [[ "$item" != ".github" && "$item" != ".git" ]]; then
+              echo "🧹 Deleting: $item"
+              rm -rf "$item"
+            fi
+          done
+
+      # ۳. فایل‌های زیپ رو برمی‌گردونیم و استخراج می‌کنیم
+      - name: Restore and extract zip
+        run: |
+          if ls /tmp/zipfiles/*.zip 1>/dev/null 2>&1; then
+            mv /tmp/zipfiles/*.zip .
+            for zipfile in *.zip; do
+              echo "📦 Extracting $zipfile ..."
+              7z x "$zipfile" -o. -y
+              rm -f "$zipfile"
+            done
+          else
+            echo "ℹ️ No zip files found."
+          fi
+
+      # ۴. تغییرات رو commit و push می‌کنیم
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Clean root and extract zip contents"
+            branch="${GITHUB_REF_NAME:-main}"
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$branch
+          else
+            echo "ℹ️ No changes to commit."
+          fi
